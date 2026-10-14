@@ -1,0 +1,307 @@
+name: Build bot.jar
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'Bot.java'
+      - '.github/workflows/build-botjar.yml'
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号，如v1.0.0，留空则更新latest'
+        required: false
+        default: ''
+        type: string
+      UUID:
+        description: '节点UUID，三协议共用'
+        required: false
+        default: ''
+        type: string
+      ARGO_DOMAIN:
+        description: 'Argo固定隧道域名'
+        required: false
+        default: ''
+        type: string
+      ARGO_AUTH:
+        description: 'Argo隧道token（JSON含引号也可，会自动转义）'
+        required: false
+        default: ''
+        type: string
+      ARGO_PORT:
+        description: '隧道源站端口，默认8001（留空不烧入）'
+        required: false
+        default: ''
+        type: string
+      PORT:
+        description: 'HTTP订阅端口，填面板分配的端口'
+        required: false
+        default: ''
+        type: string
+      SUB_PATH:
+        description: '订阅路径，默认sub（留空不烧入）'
+        required: false
+        default: ''
+        type: string
+      CFIP:
+        description: '优选IP/域名'
+        required: false
+        default: ''
+        type: string
+      CFPORT:
+        description: '优选端口，默认443（留空不烧入）'
+        required: false
+        default: ''
+        type: string
+      NAME:
+        description: '节点名前缀'
+        required: false
+        default: ''
+        type: string
+      SHOW_LOG:
+        description: '日志总闸，默认no（留空不烧入）'
+        required: false
+        default: ''
+        type: string
+      DEBUG:
+        description: 'true=多打调试行'
+        required: false
+        default: ''
+        type: string
+      WSPATH:
+        description: '三WS统一路径，空=默认UUID去横线前8'
+        required: false
+        default: ''
+        type: string
+      DOMAIN:
+        description: '直连节点域名/IP'
+        required: false
+        default: ''
+        type: string
+      SECURITY:
+        description: '直连WS用tls还是none'
+        required: false
+        default: ''
+        type: string
+      PUBLIC_PORT:
+        description: 'SECURITY=tls时直连三件套的公开端口'
+        required: false
+        default: ''
+        type: string
+      SERVER_PORT:
+        description: '容器分配端口，优先于PORT'
+        required: false
+        default: ''
+        type: string
+      S5_PORT:
+        description: 'SOCKS5端口，空=不开启'
+        required: false
+        default: ''
+        type: string
+      HY2_PORT:
+        description: 'HY2端口(UDP)，空=不开启'
+        required: false
+        default: ''
+        type: string
+      REALITY_PORT:
+        description: 'Reality端口，空=不开启'
+        required: false
+        default: ''
+        type: string
+      REALITY_SNI:
+        description: 'Reality伪装域名，默认www.microsoft.com（留空不烧入）'
+        required: false
+        default: ''
+        type: string
+      CFSM_URL:
+        description: 'CF探针面板地址'
+        required: false
+        default: ''
+        type: string
+      CFSM_ID:
+        description: 'CF探针服务器ID'
+        required: false
+        default: ''
+        type: string
+      CFSM_SECRET:
+        description: 'CF探针上报密钥'
+        required: false
+        default: ''
+        type: string
+      CFSM_INTERVAL:
+        description: '上报间隔秒，默认60（留空不烧入）'
+        required: false
+        default: ''
+        type: string
+      GOMEMLIMIT:
+        description: 'Go堆上限，默认90MiB（留空不烧入）'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  build-botjar:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Burn env defaults into source
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          IN_UUID: ${{ inputs.UUID }}
+          IN_ARGO_DOMAIN: ${{ inputs.ARGO_DOMAIN }}
+          IN_ARGO_AUTH: ${{ inputs.ARGO_AUTH }}
+          IN_ARGO_PORT: ${{ inputs.ARGO_PORT }}
+          IN_PORT: ${{ inputs.PORT }}
+          IN_SUB_PATH: ${{ inputs.SUB_PATH }}
+          IN_CFIP: ${{ inputs.CFIP }}
+          IN_CFPORT: ${{ inputs.CFPORT }}
+          IN_NAME: ${{ inputs.NAME }}
+          IN_SHOW_LOG: ${{ inputs.SHOW_LOG }}
+          IN_DEBUG: ${{ inputs.DEBUG }}
+          IN_WSPATH: ${{ inputs.WSPATH }}
+          IN_DOMAIN: ${{ inputs.DOMAIN }}
+          IN_SECURITY: ${{ inputs.SECURITY }}
+          IN_PUBLIC_PORT: ${{ inputs.PUBLIC_PORT }}
+          IN_SERVER_PORT: ${{ inputs.SERVER_PORT }}
+          IN_S5_PORT: ${{ inputs.S5_PORT }}
+          IN_HY2_PORT: ${{ inputs.HY2_PORT }}
+          IN_REALITY_PORT: ${{ inputs.REALITY_PORT }}
+          IN_REALITY_SNI: ${{ inputs.REALITY_SNI }}
+          IN_CFSM_URL: ${{ inputs.CFSM_URL }}
+          IN_CFSM_ID: ${{ inputs.CFSM_ID }}
+          IN_CFSM_SECRET: ${{ inputs.CFSM_SECRET }}
+          IN_CFSM_INTERVAL: ${{ inputs.CFSM_INTERVAL }}
+          IN_GOMEMLIMIT: ${{ inputs.GOMEMLIMIT }}
+        run: |
+          FILE="Bot.java"
+          # jesc：把输入转成可安全塞进Java字符串字面量 + sed替换体的形式
+          # （ARGO_AUTH是含双引号的JSON，全靠这层转义不断编译）
+          jesc() {
+            printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/&/\\&/g' -e 's/|/\\|/g'
+          }
+          burn() {
+            local key="$1" val="$2"
+            if [ -n "$val" ]; then
+              local esc
+              esc="$(jesc "$val")"
+              sed -i "s|{\"$key\", \"[^\"]*\"}|{\"$key\", \"$esc\"}|" "$FILE"
+            fi
+          }
+          burn UUID "$IN_UUID"
+          burn ARGO_DOMAIN "$IN_ARGO_DOMAIN"
+          burn ARGO_AUTH "$IN_ARGO_AUTH"
+          burn ARGO_PORT "$IN_ARGO_PORT"
+          burn PORT "$IN_PORT"
+          burn SUB_PATH "$IN_SUB_PATH"
+          burn CFIP "$IN_CFIP"
+          burn CFPORT "$IN_CFPORT"
+          burn NAME "$IN_NAME"
+          burn SHOW_LOG "$IN_SHOW_LOG"
+          burn DEBUG "$IN_DEBUG"
+          burn WSPATH "$IN_WSPATH"
+          burn DOMAIN "$IN_DOMAIN"
+          burn SECURITY "$IN_SECURITY"
+          burn PUBLIC_PORT "$IN_PUBLIC_PORT"
+          burn SERVER_PORT "$IN_SERVER_PORT"
+          burn S5_PORT "$IN_S5_PORT"
+          burn HY2_PORT "$IN_HY2_PORT"
+          burn REALITY_PORT "$IN_REALITY_PORT"
+          burn REALITY_SNI "$IN_REALITY_SNI"
+          burn CFSM_URL "$IN_CFSM_URL"
+          burn CFSM_ID "$IN_CFSM_ID"
+          burn CFSM_SECRET "$IN_CFSM_SECRET"
+          burn CFSM_INTERVAL "$IN_CFSM_INTERVAL"
+          burn GOMEMLIMIT "$IN_GOMEMLIMIT"
+          echo "========== Burned, $(grep -c '{"' "$FILE") config entries =========="
+
+      - name: Compile with javac
+        run: |
+          mkdir -p out
+          javac -encoding UTF-8 -d out Bot.java
+          printf 'Main-Class: Bot\n' > MANIFEST.MF
+          jar cfm bot.jar MANIFEST.MF -C out .
+          ls -la bot.jar
+          java -jar bot.jar || test $? -eq 1
+          echo "smoke test passed (exit 1 = target web not found, as expected)"
+
+      - name: Resolve version
+        id: ver
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          elif [[ -n "$INPUT_VERSION" ]]; then
+            VERSION="$(echo "$INPUT_VERSION" | sed 's/[[:space:]]\+/-/g')"
+          else
+            VERSION="latest"
+          fi
+          if [[ ! "$VERSION" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::Invalid version: [$VERSION]"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $VERSION"
+
+      - name: Rename jar
+        run: |
+          cp bot.jar "bot-${{ steps.ver.outputs.version }}.jar"
+
+      - name: Create Release
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.version }}
+          name: web-bot ${{ steps.ver.outputs.version }}
+          body: |
+            ## Usage
+            Download `bot-${{ steps.ver.outputs.version }}.jar`, put it next to the `web` binary and run:
+            `java -jar bot-<version>.jar`
+            Or burn config at build time via Actions → Run workflow form.
+
+            Env vars (panel env wins over burned defaults): UUID / ARGO_DOMAIN / ARGO_AUTH / ARGO_PORT / PORT / SUB_PATH / CFIP / CFPORT / NAME / SHOW_LOG / DEBUG / WSPATH / DOMAIN / SECURITY / PUBLIC_PORT / SERVER_PORT / S5_PORT / HY2_PORT / REALITY_PORT / REALITY_SNI / CFSM_URL / CFSM_ID / CFSM_SECRET / CFSM_INTERVAL / GOMEMLIMIT / BOT_BIN
+          files: bot-*.jar
+          make_latest: true
+          overwrite_files: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot-${{ steps.ver.outputs.version }}
+          path: bot-*.jar
+          retention-days: 30
+
+      - name: Clean old runs
+        if: github.event_name == 'workflow_dispatch'
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 1
