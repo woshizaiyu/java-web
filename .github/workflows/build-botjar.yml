@@ -15,134 +15,16 @@ on:
   release:
     types: [created]
   workflow_dispatch:
+    # GitHub硬限制：workflow_dispatch最多10个inputs，原26个独立输入会被直接拒收。
+    # 改为 version + config(多行KEY=VALUE) 两个输入，25个烧入键全部保留。
     inputs:
       version:
         description: '版本号，如v1.0.0，留空则更新latest'
         required: false
         default: ''
         type: string
-      UUID:
-        description: '节点UUID，三协议共用'
-        required: false
-        default: ''
-        type: string
-      ARGO_DOMAIN:
-        description: 'Argo固定隧道域名'
-        required: false
-        default: ''
-        type: string
-      ARGO_AUTH:
-        description: 'Argo隧道token（JSON含引号也可，会自动转义）'
-        required: false
-        default: ''
-        type: string
-      ARGO_PORT:
-        description: '隧道源站端口，默认8001（留空不烧入）'
-        required: false
-        default: ''
-        type: string
-      PORT:
-        description: 'HTTP订阅端口，填面板分配的端口'
-        required: false
-        default: ''
-        type: string
-      SUB_PATH:
-        description: '订阅路径，默认sub（留空不烧入）'
-        required: false
-        default: ''
-        type: string
-      CFIP:
-        description: '优选IP/域名'
-        required: false
-        default: ''
-        type: string
-      CFPORT:
-        description: '优选端口，默认443（留空不烧入）'
-        required: false
-        default: ''
-        type: string
-      NAME:
-        description: '节点名前缀'
-        required: false
-        default: ''
-        type: string
-      SHOW_LOG:
-        description: '日志总闸，默认no（留空不烧入）'
-        required: false
-        default: ''
-        type: string
-      DEBUG:
-        description: 'true=多打调试行'
-        required: false
-        default: ''
-        type: string
-      WSPATH:
-        description: '三WS统一路径，空=默认UUID去横线前8'
-        required: false
-        default: ''
-        type: string
-      DOMAIN:
-        description: '直连节点域名/IP'
-        required: false
-        default: ''
-        type: string
-      SECURITY:
-        description: '直连WS用tls还是none'
-        required: false
-        default: ''
-        type: string
-      PUBLIC_PORT:
-        description: 'SECURITY=tls时直连三件套的公开端口'
-        required: false
-        default: ''
-        type: string
-      SERVER_PORT:
-        description: '容器分配端口，优先于PORT'
-        required: false
-        default: ''
-        type: string
-      S5_PORT:
-        description: 'SOCKS5端口，空=不开启'
-        required: false
-        default: ''
-        type: string
-      HY2_PORT:
-        description: 'HY2端口(UDP)，空=不开启'
-        required: false
-        default: ''
-        type: string
-      REALITY_PORT:
-        description: 'Reality端口，空=不开启'
-        required: false
-        default: ''
-        type: string
-      REALITY_SNI:
-        description: 'Reality伪装域名，默认www.microsoft.com（留空不烧入）'
-        required: false
-        default: ''
-        type: string
-      CFSM_URL:
-        description: 'CF探针面板地址'
-        required: false
-        default: ''
-        type: string
-      CFSM_ID:
-        description: 'CF探针服务器ID'
-        required: false
-        default: ''
-        type: string
-      CFSM_SECRET:
-        description: 'CF探针上报密钥'
-        required: false
-        default: ''
-        type: string
-      CFSM_INTERVAL:
-        description: '上报间隔秒，默认60（留空不烧入）'
-        required: false
-        default: ''
-        type: string
-      GOMEMLIMIT:
-        description: 'Go堆上限，默认90MiB（留空不烧入）'
+      config:
+        description: '烧入配置，每行 KEY=VALUE。键：UUID ARGO_DOMAIN ARGO_AUTH ARGO_PORT PORT SUB_PATH CFIP CFPORT NAME SHOW_LOG DEBUG WSPATH DOMAIN SECURITY PUBLIC_PORT SERVER_PORT S5_PORT HY2_PORT REALITY_PORT REALITY_SNI CFSM_URL CFSM_ID CFSM_SECRET CFSM_INTERVAL GOMEMLIMIT。例：UUID=xxx / ARGO_AUTH={"a":1}。留空则不烧入'
         required: false
         default: ''
         type: string
@@ -167,37 +49,15 @@ jobs:
       - name: Burn env defaults into source
         if: github.event_name == 'workflow_dispatch'
         env:
-          IN_UUID: ${{ inputs.UUID }}
-          IN_ARGO_DOMAIN: ${{ inputs.ARGO_DOMAIN }}
-          IN_ARGO_AUTH: ${{ inputs.ARGO_AUTH }}
-          IN_ARGO_PORT: ${{ inputs.ARGO_PORT }}
-          IN_PORT: ${{ inputs.PORT }}
-          IN_SUB_PATH: ${{ inputs.SUB_PATH }}
-          IN_CFIP: ${{ inputs.CFIP }}
-          IN_CFPORT: ${{ inputs.CFPORT }}
-          IN_NAME: ${{ inputs.NAME }}
-          IN_SHOW_LOG: ${{ inputs.SHOW_LOG }}
-          IN_DEBUG: ${{ inputs.DEBUG }}
-          IN_WSPATH: ${{ inputs.WSPATH }}
-          IN_DOMAIN: ${{ inputs.DOMAIN }}
-          IN_SECURITY: ${{ inputs.SECURITY }}
-          IN_PUBLIC_PORT: ${{ inputs.PUBLIC_PORT }}
-          IN_SERVER_PORT: ${{ inputs.SERVER_PORT }}
-          IN_S5_PORT: ${{ inputs.S5_PORT }}
-          IN_HY2_PORT: ${{ inputs.HY2_PORT }}
-          IN_REALITY_PORT: ${{ inputs.REALITY_PORT }}
-          IN_REALITY_SNI: ${{ inputs.REALITY_SNI }}
-          IN_CFSM_URL: ${{ inputs.CFSM_URL }}
-          IN_CFSM_ID: ${{ inputs.CFSM_ID }}
-          IN_CFSM_SECRET: ${{ inputs.CFSM_SECRET }}
-          IN_CFSM_INTERVAL: ${{ inputs.CFSM_INTERVAL }}
-          IN_GOMEMLIMIT: ${{ inputs.GOMEMLIMIT }}
+          IN_CONFIG: ${{ inputs.config }}
         run: |
           FILE="Bot.java"
           # jesc：把输入转成可安全塞进Java字符串字面量 + sed替换体的形式
-          # （ARGO_AUTH是含双引号的JSON，全靠这层转义不断编译）
+          # （ARGO_AUTH是含双引号的JSON，全靠这层转义不断编译；
+          # 注意双引号要编成6反斜杠+引号：外层sed替换体会吃掉一层，
+          # 实测 s/"/\\"/g 会让引号裸奔导致javac失败）
           jesc() {
-            printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/&/\\&/g' -e 's/|/\\|/g'
+            printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\\\\\"/g' -e 's/&/\\&/g' -e 's/|/\\|/g'
           }
           burn() {
             local key="$1" val="$2"
@@ -207,31 +67,22 @@ jobs:
               sed -i "s|{\"$key\", \"[^\"]*\"}|{\"$key\", \"$esc\"}|" "$FILE"
             fi
           }
-          burn UUID "$IN_UUID"
-          burn ARGO_DOMAIN "$IN_ARGO_DOMAIN"
-          burn ARGO_AUTH "$IN_ARGO_AUTH"
-          burn ARGO_PORT "$IN_ARGO_PORT"
-          burn PORT "$IN_PORT"
-          burn SUB_PATH "$IN_SUB_PATH"
-          burn CFIP "$IN_CFIP"
-          burn CFPORT "$IN_CFPORT"
-          burn NAME "$IN_NAME"
-          burn SHOW_LOG "$IN_SHOW_LOG"
-          burn DEBUG "$IN_DEBUG"
-          burn WSPATH "$IN_WSPATH"
-          burn DOMAIN "$IN_DOMAIN"
-          burn SECURITY "$IN_SECURITY"
-          burn PUBLIC_PORT "$IN_PUBLIC_PORT"
-          burn SERVER_PORT "$IN_SERVER_PORT"
-          burn S5_PORT "$IN_S5_PORT"
-          burn HY2_PORT "$IN_HY2_PORT"
-          burn REALITY_PORT "$IN_REALITY_PORT"
-          burn REALITY_SNI "$IN_REALITY_SNI"
-          burn CFSM_URL "$IN_CFSM_URL"
-          burn CFSM_ID "$IN_CFSM_ID"
-          burn CFSM_SECRET "$IN_CFSM_SECRET"
-          burn CFSM_INTERVAL "$IN_CFSM_INTERVAL"
-          burn GOMEMLIMIT "$IN_GOMEMLIMIT"
+          # config输入：多行KEY=VALUE，按首个=切分；空行/#注释跳过；兼容Windows粘贴带来的CR
+          if [ -n "$IN_CONFIG" ]; then
+            while IFS= read -r line || [ -n "$line" ]; do
+              line="${line%$'\r'}"
+              case "$line" in ''|\#*) continue;; esac
+              key="${line%%=*}"
+              val="${line#*=}"
+              key="$(printf '%s' "$key" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+              case "$key" in ''|*[!A-Za-z0-9_]*)
+                echo "::warning::skip invalid config line: $line"
+                continue
+                ;;
+              esac
+              burn "$key" "$val"
+            done <<< "$IN_CONFIG"
+          fi
           echo "========== Burned, $(grep -c '{"' "$FILE") config entries =========="
 
       - name: Compile with javac
@@ -277,12 +128,11 @@ jobs:
             ## Usage
             Download `bot-${{ steps.ver.outputs.version }}.jar`, put it next to the `web` binary and run:
             `java -jar bot-<version>.jar`
-            Or burn config at build time via Actions → Run workflow form.
+            Or burn config at build time via Actions → Run workflow (config input, one KEY=VALUE per line).
 
             Env vars (panel env wins over burned defaults): UUID / ARGO_DOMAIN / ARGO_AUTH / ARGO_PORT / PORT / SUB_PATH / CFIP / CFPORT / NAME / SHOW_LOG / DEBUG / WSPATH / DOMAIN / SECURITY / PUBLIC_PORT / SERVER_PORT / S5_PORT / HY2_PORT / REALITY_PORT / REALITY_SNI / CFSM_URL / CFSM_ID / CFSM_SECRET / CFSM_INTERVAL / GOMEMLIMIT / BOT_BIN
           files: bot-*.jar
           make_latest: true
-          overwrite_files: true
           draft: false
           prerelease: false
         env:
