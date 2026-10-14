@@ -92,8 +92,15 @@ jobs:
           printf 'Main-Class: Bot\n' > MANIFEST.MF
           jar cfm bot.jar MANIFEST.MF -C out .
           ls -la bot.jar
-          java -jar bot.jar || test $? -eq 1
-          echo "smoke test passed (exit 1 = target web not found, as expected)"
+          # 冒烟测试：仓库里若有web二进制则只验jar结构、不执行
+          # （直接java -jar会拉起常驻服务导致步骤卡死）
+          if [ -f web ]; then
+            jar tf bot.jar | grep -q 'Bot.class'
+            echo "smoke test passed (web present, jar structure ok, not executed)"
+          else
+            java -jar bot.jar || test $? -eq 1
+            echo "smoke test passed (exit 1 = target web not found, as expected)"
+          fi
 
       - name: Resolve version
         id: ver
